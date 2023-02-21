@@ -16,7 +16,9 @@
 	#define ETHERNET_H_LEN 14
 #endif
 
-#define SPECIAL_TTL 88
+#define SPECIAL_TTL 99
+
+# define HALF_MTU (1500/2)
 
 void got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *packet);
 void print_usage(void);
@@ -51,7 +53,7 @@ pcap_t *net_speeder_pcap_open_live(const char *device, int snaplen, int promisc,
 	 * DLT_ values that they can select without changing whether
 	 * the adapter is in monitor mode or not.
 	 */
-	
+
 	// p->oldstyle = 1;
 	status = pcap_activate(p);
 	if (status < 0)
@@ -86,12 +88,13 @@ void print_usage(void) {
 }
 
 void got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *packet) {
-	static int count = 1;                  
-	struct libnet_ipv4_hdr *ip;              
+	static int count = 1;
+	int duplicate = 1;
+	struct libnet_ipv4_hdr *ip;
 
 	libnet_t *libnet_handler = (libnet_t *)args;
 	count++;
-	
+
 	ip = (struct libnet_ipv4_hdr*)(packet + ETHERNET_H_LEN);
 
 	if(ip->ip_ttl != SPECIAL_TTL) {
@@ -106,10 +109,19 @@ void got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *pa
 			udp->uh_sum = 0;
 			libnet_do_checksum(libnet_handler, (u_int8_t *)ip, IPPROTO_UDP, LIBNET_UDP_H);
 		}
-		int len_written = libnet_adv_write_raw_ipv4(libnet_handler, (u_int8_t *)ip, ntohs(ip->ip_len));
-		if(len_written < 0) {
-			printf("packet len:[%d] actual write:[%d]\n", ntohs(ip->ip_len), len_written);
-			printf("err msg:[%s]\n", libnet_geterror(libnet_handler));
+
+		// printf("*** total len: %d\n", ntohs(ip->ip_len));
+		// small packet retransmit 2 times.
+		if (ntohs(ip->ip_len) < HALF_MTU) {
+			duplicate = 2;
+		}
+
+		while (duplicate--) {
+			int len_written = libnet_adv_write_raw_ipv4(libnet_handler, (u_int8_t *)ip, ntohs(ip->ip_len));
+			if(len_written < 0) {
+				printf("packet len:[%d] actual write:[%d]\n", ntohs(ip->ip_len), len_written);
+				printf("err msg:[%s]\n", libnet_geterror(libnet_handler));
+			}
 		}
 	} else {
 		//The packet net_speeder sent. nothing todo
@@ -143,10 +155,10 @@ int main(int argc, char **argv) {
 		printf("Device: %s\n", dev);
 		printf("Filter rule: %s\n", filter_rule);
 	} else {
-		print_usage();	
+		print_usage();
 		return -1;
 	}
-	
+
 	printf("ethernet header len:[%d](14:normal, 16:cooked)\n", ETHERNET_H_LEN);
 
 	if (pcap_lookupnet(dev, &net, &mask, errbuf) == -1) {
@@ -156,7 +168,7 @@ int main(int argc, char **argv) {
 	}
 
 	printf("init pcap\n");
-	
+
 	handle = net_speeder_pcap_open_live(dev, SNAP_LEN, 1, 0, errbuf);
 	if(handle == NULL) {
 		printf("net_speeder_pcap_open_live dev:[%s] err:[%s]\n", dev, errbuf);
