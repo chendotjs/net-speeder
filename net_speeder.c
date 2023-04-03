@@ -18,7 +18,7 @@
 
 #define SPECIAL_TTL 99
 
-# define HALF_MTU (1500/2)
+# define GENERIC_MTU (1500)
 
 void got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *packet);
 void print_usage(void);
@@ -112,7 +112,7 @@ void got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *pa
 
 		// printf("*** total len: %d\n", ntohs(ip->ip_len));
 		// small packet retransmit 2 times.
-		if (ntohs(ip->ip_len) < HALF_MTU) {
+		if (ntohs(ip->ip_len) < GENERIC_MTU/8) {
 			duplicate = 2;
 		}
 
